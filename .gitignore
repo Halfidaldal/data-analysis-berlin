@@ -1,0 +1,25 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.RDataTmp*
+renv/library/
+renv/staging/
+
+# Credentials -- never commit
+.env
+.env.local
+environment/
+*firebase-adminsdk*.json
+the-never-ending-story-*.json
+firebase-debug.log
+
+# macOS
+.DS_Store

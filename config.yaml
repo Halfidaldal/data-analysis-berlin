@@ -1,0 +1,130 @@
+# PENPAL Analysis Configuration
+
+# Active experiment: "human-ai", "human-human", or "ai-ai"
+active_experiment: "berlin"
+
+# Experiment-specific configuration
+experiments:
+  berlin:
+    # Data paths
+    raw_dir: "data/berlin/raw"
+    interim_dir: "data/berlin/interim"
+    processed_dir: "data/berlin/processed"
+
+    # Firestore settings
+    firestore:
+      collection_name: "story_data_berlin"
+      stories_collection: "story_data_berlin"
+      min_interactions: 5
+      schema: "flat"
+
+    # Cleaning parameters
+    cleaning:
+      max_turns: 5
+
+    # Author columns in raw data (before normalization)
+    raw_columns:
+      author_1: "user"
+      author_2: "ai"
+
+    # German-language models for this corpus
+    embeddings:
+      model_name: "jinaai/jina-embeddings-v3"
+    sentiment:
+      model_name: "ssary/XLM-RoBERTa-German-sentiment"
+      language: "de"
+
+# Shared configuration (applies to all experiments)
+shared:
+  # Firestore credentials
+  firestore:
+    credentials_path: "environment/the-never-ending-story-a7b5f-0f4f8dbe4084.json"
+  
+  # Cleaning parameters
+  cleaning:
+    # Legacy edit-distance settings are intentionally no longer used by
+    # scripts/02_clean_dataset.py. The primary pipeline uses deterministic
+    # text-quality QC without rewriting participant text.
+    edit_distance_threshold: 100
+    text_quality_qc:
+      story_exclusion_min_flagged_rows: 2
+      exclude_if_first_human_flagged: true
+      min_substantive_chars: 3
+      min_alpha_ratio: 0.45
+      max_symbol_ratio: 0.35
+      max_keyboard_pattern_ratio: 0.12
+      min_word_vowel_ratio: 0.35
+      long_token_chars: 24
+      min_word_count_for_vowel_check: 3
+    simulated: false
+  
+  # Embedding models
+  embeddings:
+    model_name: "Kingsoft-LLM/QZhou-Embedding"
+    batch_size: 1
+    task: null
+  
+  # Novelty computation
+  novelty:
+    model_name: "google/gemma-4-31B"
+    window_size: 40
+    task: null
+    # Unused by the pipeline (nothing in src/ or scripts/ reads it). Authenticate to
+    # Hugging Face with the HF_TOKEN environment variable or `huggingface-cli login`.
+    hf_token: null
+  
+  # Semantic exploration
+  exploration:
+    max_k: 10
+  
+  # Sentiment analysis
+  sentiment:
+    model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"
+    batch_size: 64
+    valence_method: "simple"  # "simple", "amplify", or "dampen"
+    engine: "projection"      # "bert" or "projection"
+    language: "en"
+    axis: "valence"           # Semantic Projection axis name
+
+    # Context-aware projection (script 04).
+    #
+    # Per-turn sentiment = proj(E(last_K_turns + turn)) - proj(E(last_K_turns)).
+    # Bounded context (projection_context_window) prevents the magnitude
+    # collapse that an unbounded cumulative prefix produces with L2-normalized
+    # embeddings. We also emit a within-conversation z-scored variant
+    # (pooled across both author slots) for fair cross-condition comparisons.
+    #
+    # The encoder + concept vector below match the legacy
+    # author_*_sentiment_projection (turn-alone) baseline computed by the same
+    # script, so the only methodological difference between the two outputs
+    # is the bounded contextual encoding -- a tight sanity-check.
+    #
+    # scripts/04b_build_concept_vector.py is still available if you want to
+    # rebuild the concept vector with a different encoder, but is not used by
+    # the default pipeline; just point projection_vector_path at the rebuilt
+    # CSV when you do.
+    projection_model_name: "paraphrase-multilingual-mpnet-base-v2"
+    projection_vector_path: "src/nes/data/Sentiment.csv"
+    projection_anchor_text_path: "src/nes/data/Fiction4Sentiment_concept_text.csv"
+    projection_context_window: 1
+    projection_batch_size: 32
+    projection_build_batch_size: 8
+    projection_task: null
+    projection_context_separator: "\n"
+  
+  # Simulation parameters (AI-AI baseline)
+  simulation:
+    n_turns_per_story: 10
+    model_name: "gpt-4o-mini"
+    seed: 42
+  
+  # Surface metrics (textdescriptives)
+  surface_metrics:
+    spacy_mdl: "en_core_web_md"
+    batch_size: 10
+    n_process: 5
+  
+  # Analysis parameters
+  analysis:
+    random_seed: 42
+    language: "en"
