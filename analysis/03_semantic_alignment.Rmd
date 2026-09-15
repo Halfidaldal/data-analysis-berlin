@@ -1,0 +1,43 @@
+---
+title: "Directional semantic alignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(arrow); library(dplyr); library(tidyr); library(lme4); library(lmerTest)
+P <- "../data/berlin/processed/"
+```
+
+```{r data}
+d <- read_parquet(paste0(P, "metrics_semantic_pairs.parquet")) %>%
+  mutate(direction = factor(direction, levels = c("human_uptake", "model_uptake")),
+         condition = factor(condition, levels = c("1", "2", "3")))
+contrasts(d$condition) <- contr.sum(3)
+
+d %>% group_by(condition, direction) %>%
+  summarise(n = n(), cos_partner = mean(cos_partner),
+            rubber_band = mean(rubber_band, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = direction, values_from = c(n, cos_partner, rubber_band))
+```
+
+## Adjacency cosine
+
+```{r}
+m0 <- lmer(cos_partner ~ direction + (1|story_id), d, REML = FALSE)
+m1 <- lmer(cos_partner ~ direction + condition + (1|story_id), d, REML = FALSE)
+m2 <- lmer(cos_partner ~ direction * condition + (1|story_id), d, REML = FALSE)
+summary(m0)$coefficients
+anova(m1, m2)
+```
+
+## Rubber band (partner minus self)
+
+```{r}
+r <- filter(d, !is.na(rubber_band))
+r0 <- lmer(rubber_band ~ direction + (1|story_id), r, REML = FALSE)
+r1 <- lmer(rubber_band ~ direction + condition + (1|story_id), r, REML = FALSE)
+r2 <- lmer(rubber_band ~ direction * condition + (1|story_id), r, REML = FALSE)
+summary(r0)$coefficients
+anova(r1, r2)
+```

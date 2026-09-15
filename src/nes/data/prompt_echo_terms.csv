@@ -1,0 +1,51 @@
+condition,term,source,notes
+1,e-mail,prompt,"prompt says 'emails'"
+1,email,prompt,
+1,mail,prompt,
+1,soziale medien,prompt,"prompt says 'social media'"
+1,social media,prompt,
+1,foto,prompt,
+1,fotos,prompt,
+1,video,prompt,
+1,videos,prompt,
+1,daten,prompt,
+1,datensatz,prompt,
+1,ki-version,prompt,"prompt says 'AI version'"
+1,ai-version,prompt,
+1,künstliche intelligenz,neighbour,
+1,algorithmus,neighbour,
+1,rekonstruieren,neighbour,
+1,nachbilden,neighbour,
+1,digitale kopie,neighbour,
+1,profil,neighbour,
+1,account,neighbour,
+2,sprachmodell,prompt,"prompt says 'language model'"
+2,sprachmodelle,prompt,
+2,language model,prompt,
+2,chatgpt,prompt,
+2,gemini,prompt,
+2,rolle,prompt,"prompt says 'taking up new roles'"
+2,rollen,prompt,
+2,weiterentwickeln,prompt,"prompt says 'continue to evolve'"
+2,entwickeln,prompt,
+2,entwicklung,neighbour,
+2,generation,neighbour,
+2,ki,neighbour,"also appears in the W1 prompt as 'AI'; overlap is real and left in"
+2,modell,neighbour,
+2,version,neighbour,
+3,nutzlos,prompt,"prompt says 'useless'"
+3,unnütz,prompt,
+3,unbrauchbar,prompt,
+3,überflüssig,neighbour,
+3,irrelevant,prompt,
+3,gegenstand,prompt,"prompt says 'objects'"
+3,gegenstände,prompt,
+3,objekt,prompt,
+3,objekte,prompt,
+3,ding,prompt,"prompt says 'that thing'; also a very common noun — see note below"
+3,dinge,prompt,
+3,alltag,prompt,"prompt says 'everyday life'"
+3,alltäglich,prompt,
+3,nutzen,prompt,"prompt says 'useful'"
+3,nützlich,prompt,
+3,veraltet,neighbour,

@@ -1,0 +1,104 @@
+---
+title: "Human–LLM asymmetry"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(arrow); library(dplyr); library(tidyr); library(lme4); library(lmerTest)
+P <- "../data/berlin/processed/"
+```
+
+```{r data}
+story <- read_parquet(paste0(P, "metrics_story.parquet"))
+seg   <- read_parquet(paste0(P, "metrics_segment.parquet"))
+clause<- read_parquet(paste0(P, "metrics_clause.parquet"))
+
+long <- bind_rows(
+  story %>% transmute(story_id, condition, author = "human",
+                      words = n_words_human, ttr = ttr_human, valence = v_human),
+  story %>% transmute(story_id, condition, author = "model",
+                      words = n_words_model, ttr = ttr_model, valence = v_model)
+) %>%
+  mutate(author = factor(author, levels = c("human", "model")),
+         condition = factor(condition, levels = c("1", "2", "3")))
+contrasts(long$condition) <- contr.sum(3)
+
+seg <- seg %>%
+  filter(n_words > 0) %>%
+  mutate(author = factor(author, levels = c("human", "model")),
+         condition = factor(condition, levels = c("1", "2", "3")))
+contrasts(seg$condition) <- contr.sum(3)
+
+clause <- clause %>%
+  filter(!truncation_artefact) %>%
+  mutate(author = factor(author, levels = c("human", "model")),
+         condition = factor(condition, levels = c("1", "2", "3")),
+         y = as.integer(has_direct_object))
+contrasts(clause$condition) <- contr.sum(3)
+```
+
+```{r helpers}
+asym_lmm <- function(d, y) {
+  f <- function(rhs) lmer(reformulate(rhs, response = y), data = d, REML = FALSE)
+  m0 <- f(c("author", "(1|story_id)"))
+  m1 <- f(c("author", "condition", "(1|story_id)"))
+  m2 <- f(c("author*condition", "(1|story_id)"))
+  list(pooled = summary(m0)$coefficients, interaction = anova(m1, m2))
+}
+
+asym_glmm <- function(d, y, fam, off = NULL) {
+  rhs <- if (is.null(off)) "" else paste0(" + offset(log(", off, "))")
+  f <- function(x) glmer(as.formula(paste0(y, " ~ ", x, rhs, " + (1|story_id)")),
+                         data = d, family = fam)
+  m0 <- f("author"); m1 <- f("author + condition"); m2 <- f("author * condition")
+  list(pooled = summary(m0)$coefficients, interaction = anova(m1, m2))
+}
+
+gaps <- function(d, y, by = "author") {
+  d %>% group_by(condition, .data[[by]]) %>%
+    summarise(m = mean(.data[[y]], na.rm = TRUE), .groups = "drop") %>%
+    pivot_wider(names_from = all_of(by), values_from = m) %>%
+    mutate(gap = model - human)
+}
+```
+
+## Surface: turn length
+
+```{r}
+gaps(long, "words")
+asym_lmm(long, "words")
+```
+
+## Surface: lexical variety
+
+```{r}
+gaps(long, "ttr")
+asym_lmm(long, "ttr")
+```
+
+## Sentiment
+
+```{r}
+gaps(long, "valence")
+asym_lmm(long, "valence")
+```
+
+## Retrospection: past cues
+
+```{r}
+asym_glmm(seg, "past_cues", poisson, off = "n_words")
+```
+
+## Retrospection: future cues
+
+```{r}
+asym_glmm(seg, "future_cues", poisson, off = "n_words")
+```
+
+## Transitivity
+
+```{r}
+gaps(clause, "y")
+asym_glmm(clause, "y", binomial)
+```

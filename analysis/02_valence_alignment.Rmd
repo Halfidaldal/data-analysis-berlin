@@ -1,0 +1,47 @@
+---
+title: "Directional valence alignment"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(arrow); library(dplyr); library(lme4); library(lmerTest); library(emmeans)
+P <- "../data/berlin/processed/"
+```
+
+```{r data}
+d <- read_parquet(paste0(P, "metrics_alignment_pairs.parquet")) %>%
+  filter(!is.na(pred_z), !is.na(resp_z)) %>%
+  mutate(direction = factor(direction, levels = c("model_to_human", "human_to_model")),
+         condition = factor(condition, levels = c("1", "2", "3")))
+table(d$condition, d$direction)
+```
+
+## Direction only
+
+```{r}
+m1 <- lmer(resp_z ~ pred_z * direction + (1 + pred_z | story_id), d, REML = FALSE)
+summary(m1)
+emtrends(m1, ~ direction, var = "pred_z")
+```
+
+## Direction x condition
+
+```{r}
+m2 <- lmer(resp_z ~ pred_z * direction * condition + (1 + pred_z | story_id), d, REML = FALSE)
+anova(m1, m2)
+emtrends(m2, ~ direction | condition, var = "pred_z")
+```
+
+## Permutation null
+
+```{r}
+set.seed(1)
+obs <- fixef(m1)["pred_z:directionhuman_to_model"]
+null <- replicate(200, {
+  p <- d %>% group_by(story_id, direction) %>% mutate(resp_z = sample(resp_z)) %>% ungroup()
+  fixef(lmer(resp_z ~ pred_z * direction + (1 | story_id), p, REML = FALSE))["pred_z:directionhuman_to_model"]
+})
+c(observed = obs, null_mean = mean(null), null_sd = sd(null),
+  p = mean(abs(null - mean(null)) >= abs(obs - mean(null))))
+```

@@ -1,17 +1,10 @@
 # Python
 .venv/
+.venv_embed/
 venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-
-# R
-.Rproj.user/
-.Rhistory
-.RData
-.RDataTmp*
-renv/library/
-renv/staging/
 
 # Credentials -- never commit
 .env
@@ -23,3 +16,4 @@ firebase-debug.log
 
 # macOS
 .DS_Store
+.mplconfig/

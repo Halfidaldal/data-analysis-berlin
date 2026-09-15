@@ -13,7 +13,8 @@ import argparse
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from nes.io import load_csv, save_parquet, get_active_experiment, get_experiment_config, get_shared_config
+from nes.cleaning import normalize_columns
+from nes.io import load_csv, save_parquet, get_active_experiment, get_experiment_config, get_shared_config, get_file_suffix
 from nes.surface_metrics import get_descriptive_metrics_dual_full_long, get_descriptive_metrics_dual_inter_long
 
 
@@ -31,8 +32,9 @@ def main():
     
     print(f"Active experiment: {experiment}")
 
-    full_input = args.full or ("stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv")
-    interaction_input = args.interaction or ("interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv")
+    suffix = get_file_suffix()
+    full_input = args.full or f"stories_full_text_filtered{suffix}.csv"
+    interaction_input = args.interaction or f"interaction_level_stories_filtered{suffix}.csv"
     full_output = "full_story_surface_metrics_simulated.parquet" if simulated else "full_story_surface_metrics.parquet"
     interaction_output = "interaction_level_surface_metrics_simulated.parquet" if simulated else "interaction_level_surface_metrics.parquet"
     

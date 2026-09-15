@@ -49,7 +49,7 @@ def normalize_columns(df: pd.DataFrame, experiment: str) -> pd.DataFrame:
     
     Args:
         df: Input DataFrame with experiment-specific column names
-        experiment: Experiment name ('human-ai' or 'human-human')
+        experiment: Experiment name ('human-ai', 'human-human', 'ai-ai' or 'berlin')
         
     Returns:
         DataFrame with normalized columns
@@ -93,16 +93,30 @@ def normalize_columns(df: pd.DataFrame, experiment: str) -> pd.DataFrame:
             df = df.rename(columns={'full_ai_dot': 'full_author_2_dot'})
             
     elif experiment == 'ai-ai':
-        # author_1 -> author_1, author_2 -> author_2
-        if 'author_1' in df.columns:
-            df = df.rename(columns={'author_1': 'author_1'})
-        if 'author_2' in df.columns:
-            df = df.rename(columns={'author_2': 'author_2'})
-        # Handle full text columns if present
-        if 'full_author_1' in df.columns:
-            df = df.rename(columns={'full_author_1': 'full_author_1'})
-        if 'full_author_2' in df.columns:
-            df = df.rename(columns={'full_author_2': 'full_author_2'})
+        # Already in the unified schema; nothing to rename.
+        pass
+
+    elif experiment == 'berlin':
+        # Same slot semantics as human-ai: the visitor writes first, the model
+        # continues. Renaming here is what lets the shared scripts (03, 04, 06,
+        # 08) run over the Berlin corpus at all -- they address author_1 /
+        # author_2 and would otherwise miss the user / ai columns silently.
+        if 'user' in df.columns:
+            df = df.rename(columns={'user': 'author_1'})
+        if 'ai' in df.columns:
+            df = df.rename(columns={'ai': 'author_2'})
+        if 'full_user' in df.columns:
+            df = df.rename(columns={'full_user': 'full_author_1'})
+        if 'full_ai' in df.columns:
+            df = df.rename(columns={'full_ai': 'full_author_2'})
+        if 'full_user_dot' in df.columns:
+            df = df.rename(columns={'full_user_dot': 'full_author_1_dot'})
+        if 'full_ai_dot' in df.columns:
+            df = df.rename(columns={'full_ai_dot': 'full_author_2_dot'})
+        # Unlike HH / AA, the Berlin slots carry a fixed agent identity. Record
+        # it so downstream code never has to infer direction from slot order.
+        df['author_1_type'] = 'human'
+        df['author_2_type'] = 'llm'
     else:
         raise ValueError(f"Unknown experiment: {experiment}")
     

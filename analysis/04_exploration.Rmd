@@ -1,0 +1,27 @@
+---
+title: "Exploration"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(arrow); library(dplyr); library(lme4); library(lmerTest); library(emmeans)
+P <- "../data/berlin/processed/"
+```
+
+```{r data}
+d <- read_parquet(paste0(P, "metrics_exchange.parquet")) %>%
+  filter(complete, !is.na(semantic_distance)) %>%
+  mutate(condition = factor(condition, levels = c("1", "2", "3")))
+
+d %>% group_by(condition) %>%
+  summarise(n = n(), mean = mean(semantic_distance), sd = sd(semantic_distance))
+```
+
+```{r}
+m0 <- lmer(semantic_distance ~ 1 + (1|story_id), d, REML = FALSE)
+m1 <- lmer(semantic_distance ~ condition + (1|story_id), d, REML = FALSE)
+summary(m1)
+anova(m0, m1)
+pairs(emmeans(m1, ~ condition), adjust = "BH")
+```

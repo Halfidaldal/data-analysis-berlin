@@ -1,0 +1,41 @@
+---
+title: "Agent-agnostic condition comparison"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+library(arrow); library(dplyr); library(tidyr); library(purrr)
+P <- "../data/berlin/processed/"
+```
+
+```{r data}
+d <- read_parquet(paste0(P, "metrics_story.parquet")) %>%
+  mutate(condition = factor(condition, levels = c("1", "2", "3")),
+         valence_story = (v_human + v_model) / 2,
+         ttr_story = (ttr_human * n_words_human + ttr_model * n_words_model) /
+                     (n_words_human + n_words_model))
+
+feats <- c("retrospection_index", "past_per_1k", "future_per_1k", "transitive_rate",
+           "past_tense_rate", "semantic_distance", "valence_story", "ttr_story",
+           "n_words", "n_turn_pairs", "split_predicate_rate")
+```
+
+```{r}
+map_dfr(feats, function(f) {
+  x <- d[[f]]; ok <- !is.na(x)
+  k <- kruskal.test(x[ok] ~ d$condition[ok])
+  med <- tapply(x[ok], d$condition[ok], median)
+  tibble(feature = f, W1 = med[["1"]], W2 = med[["2"]], W3 = med[["3"]],
+         chisq = unname(k$statistic), p = k$p.value,
+         eps2 = max((unname(k$statistic) - 2) / (sum(ok) - 3), 0))
+}) %>% arrange(p)
+```
+
+```{r}
+map_dfr(feats, function(f) {
+  a <- aov(d[[f]] ~ d$condition)
+  s <- summary(a)[[1]]
+  tibble(feature = f, F = s[["F value"]][1], p = s[["Pr(>F)"]][1])
+}) %>% arrange(p)
+```

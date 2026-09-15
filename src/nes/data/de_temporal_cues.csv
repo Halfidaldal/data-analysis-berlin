@@ -1,0 +1,41 @@
+cue,class,type,in_cue_set,notes
+damals,past,deictic,1,
+früher,past,deictic,1,
+einst,past,deictic,1,
+einstmals,past,deictic,1,
+ehemals,past,deictic,1,
+seinerzeit,past,deictic,1,
+vorher,past,deictic,1,
+davor,past,deictic,1,
+zuvor,past,deictic,1,
+vergangenheit,past,lexical,1,
+vergangen,past,lexical,1,
+erinnerung,past,lexical,1,
+erinnerungen,past,lexical,1,
+damalig,past,lexical,1,
+lange her,past,phrase,1,
+vor langer zeit,past,phrase,1,
+in jenen tagen,past,phrase,1,
+zu jener zeit,past,phrase,1,
+früher einmal,past,phrase,1,
+es war einmal,past,phrase,1,"fairy-tale opener; strongly retrospective"
+bald,future,deictic,1,
+künftig,future,deictic,1,
+zukünftig,future,deictic,1,
+zukunft,future,lexical,1,
+in zukunft,future,phrase,1,
+morgen,future,deictic,1,"ambiguous with the noun Morgen (morning); resolved by POS at count time"
+übermorgen,future,deictic,1,
+demnächst,future,deictic,1,
+irgendwann,future,deictic,1,"weakly future; can also be non-specific past"
+eines tages,future,phrase,1,
+in ferner zukunft,future,phrase,1,
+kommend,future,lexical,1,
+bevorstehend,future,lexical,1,
+dereinst,future,deictic,1,
+später,future,deictic,0,"excluded: in narrative German this is as often relative-past as future"
+nicht mehr,loss,phrase,0,"loss marker; exploratory only"
+noch nie,loss,phrase,0,"exploratory only"
+niemand mehr,loss,phrase,0,"exploratory only"
+vergessen worden,loss,phrase,0,"exploratory only"
+zum letzten mal,loss,phrase,0,"exploratory only"

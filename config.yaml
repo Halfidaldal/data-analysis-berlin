@@ -1,15 +1,24 @@
-# PENPAL Analysis Configuration
+# PENPAL Berlin — pipeline configuration
+#
+# One experiment. The shared block below is the Berlin configuration, not a
+# cross-condition default: the pipeline scripts read `shared` directly and ignore
+# per-experiment overrides, so anything set only under `experiments.berlin` would
+# be dead config that reads as if it were in force. German models therefore live
+# in `shared`, and `experiments.berlin` carries only paths and selection.
 
-# Active experiment: "human-ai", "human-human", or "ai-ai"
 active_experiment: "berlin"
 
-# Experiment-specific configuration
 experiments:
   berlin:
     # Data paths
     raw_dir: "data/berlin/raw"
     interim_dir: "data/berlin/interim"
     processed_dir: "data/berlin/processed"
+
+    # Interim files are written with this suffix by script 02
+    # (stories_full_text_filtered_berlin.csv), so the downstream scripts must
+    # append it rather than looking for the unsuffixed EMNLP filenames.
+    file_suffix: "_berlin"
 
     # Firestore settings
     firestore:
@@ -22,25 +31,24 @@ experiments:
     cleaning:
       max_turns: 5
 
-    # Author columns in raw data (before normalization)
+    # Author columns in raw data (before normalization to author_1 / author_2)
     raw_columns:
       author_1: "user"
       author_2: "ai"
 
-    # German-language models for this corpus
-    embeddings:
-      model_name: "jinaai/jina-embeddings-v3"
-    sentiment:
-      model_name: "ssary/XLM-RoBERTa-German-sentiment"
-      language: "de"
+    # The perspective conditions, carried in `workshop_id`.
+    conditions:
+      "1": "W1 — the narrating I is an AI reconstruction of a real person"
+      "2": "W2 — the narrating I is a future language model"
+      "3": "W3 — the narrating I is an object that has outlived its use"
 
-# Shared configuration (applies to all experiments)
+# ---------------------------------------------------------------------------
+# Shared configuration
+# ---------------------------------------------------------------------------
 shared:
-  # Firestore credentials
   firestore:
     credentials_path: "environment/the-never-ending-story-a7b5f-0f4f8dbe4084.json"
-  
-  # Cleaning parameters
+
   cleaning:
     # Legacy edit-distance settings are intentionally no longer used by
     # scripts/02_clean_dataset.py. The primary pipeline uses deterministic
@@ -57,52 +65,39 @@ shared:
       long_token_chars: 24
       min_word_count_for_vowel_check: 3
     simulated: false
-  
-  # Embedding models
+
+  # Embeddings. The stories are German, so a multilingual encoder is in force;
+  # the English PENPAL conditions use QZhou and are not comparable.
+  #
+  # F2LLM-v2-14B: 5120 dimensions, multilingual (200+ languages), plain
+  # sentence-transformers, no trust_remote_code. It is a 14B model -- roughly
+  # 28GB in fp16 -- so it needs a large GPU and is not CPU-feasible.
+  #
+  # `task` stays null: that was a jina-v3 argument. F2LLM's Instruct/Query
+  # prompt format is for asymmetric retrieval; turn-to-turn similarity here is
+  # symmetric, so turns are encoded plain with no instruction prefix. Adding one
+  # would change what the cosine distances mean.
   embeddings:
-    model_name: "Kingsoft-LLM/QZhou-Embedding"
+    model_name: "codefuse-ai/F2LLM-v2-14B"
     batch_size: 1
     task: null
-  
-  # Novelty computation
-  novelty:
-    model_name: "google/gemma-4-31B"
-    window_size: 40
-    task: null
-    # Unused by the pipeline (nothing in src/ or scripts/ reads it). Authenticate to
-    # Hugging Face with the HF_TOKEN environment variable or `huggingface-cli login`.
-    hf_token: null
-  
-  # Semantic exploration
-  exploration:
-    max_k: 10
-  
-  # Sentiment analysis
-  sentiment:
-    model_name: "cardiffnlp/twitter-roberta-base-sentiment-latest"
-    batch_size: 64
-    valence_method: "simple"  # "simple", "amplify", or "dampen"
-    engine: "projection"      # "bert" or "projection"
-    language: "en"
-    axis: "valence"           # Semantic Projection axis name
 
-    # Context-aware projection (script 04).
-    #
-    # Per-turn sentiment = proj(E(last_K_turns + turn)) - proj(E(last_K_turns)).
-    # Bounded context (projection_context_window) prevents the magnitude
-    # collapse that an unbounded cumulative prefix produces with L2-normalized
-    # embeddings. We also emit a within-conversation z-scored variant
-    # (pooled across both author slots) for fair cross-condition comparisons.
-    #
-    # The encoder + concept vector below match the legacy
-    # author_*_sentiment_projection (turn-alone) baseline computed by the same
-    # script, so the only methodological difference between the two outputs
-    # is the bounded contextual encoding -- a tight sanity-check.
-    #
-    # scripts/04b_build_concept_vector.py is still available if you want to
-    # rebuild the concept vector with a different encoder, but is not used by
-    # the default pipeline; just point projection_vector_path at the rebuilt
-    # CSV when you do.
+  # Sentiment: concept-vector projection, and only that.
+  #
+  # The projection encoder is multilingual, so it applies to German directly and
+  # keeps the measure comparable in construction to the English conditions.
+  # Turn-level and passage-level sentiment are the same numbers reshaped, not two
+  # measures -- scripts/09_build_metric_tables.py never rescores text. A German
+  # sentiment classifier was previously configured here as an alternative engine;
+  # it is removed rather than left in place, because nothing reads it and a
+  # configured-but-unused model reads as though it were in force.
+  sentiment:
+    batch_size: 64
+    valence_method: "simple"
+    engine: "projection"
+    language: "de"
+    axis: "valence"
+
     projection_model_name: "paraphrase-multilingual-mpnet-base-v2"
     projection_vector_path: "src/nes/data/Sentiment.csv"
     projection_anchor_text_path: "src/nes/data/Fiction4Sentiment_concept_text.csv"
@@ -111,20 +106,21 @@ shared:
     projection_build_batch_size: 8
     projection_task: null
     projection_context_separator: "\n"
-  
-  # Simulation parameters (AI-AI baseline)
-  simulation:
-    n_turns_per_story: 10
-    model_name: "gpt-4o-mini"
-    seed: 42
-  
-  # Surface metrics (textdescriptives)
+
+  # Surface metrics (textdescriptives). German model: the corpus is German and
+  # an English pipeline would mis-tag every sentence.
   surface_metrics:
-    spacy_mdl: "en_core_web_md"
+    spacy_mdl: "de_core_news_md"
     batch_size: 10
     n_process: 5
-  
-  # Analysis parameters
+
+  # Dependency parsing (scripts 06, 07). The transformer
+  # parser is used rather than the md pipeline because much of the human text is
+  # uncapitalised, which the smaller German models handle poorly.
+  parsing:
+    spacy_mdl: "de_dep_news_trf"
+    spacy_mdl_en: "en_core_web_trf"
+
   analysis:
     random_seed: 42
-    language: "en"
+    language: "de"

@@ -58,6 +58,18 @@ def get_experiment_config(experiment: Optional[str] = None) -> dict:
     return config['experiments'][experiment]
 
 
+def get_file_suffix(experiment: Optional[str] = None) -> str:
+    """
+    Suffix that script 02 stamps onto this experiment's interim filenames.
+
+    The Berlin interim files are `stories_full_text_filtered_berlin.csv` rather
+    than the unsuffixed EMNLP names, so every script that loads them has to
+    append this. Returns "" when the experiment sets no suffix, which keeps the
+    shared scripts behaving exactly as they do in the English repo.
+    """
+    return get_experiment_config(experiment).get('file_suffix', '')
+
+
 def get_shared_config() -> dict:
     """Get shared configuration that applies to all experiments."""
     config = load_config()
