@@ -25,7 +25,6 @@ def init_firestore(
     project_id: Optional[str] = None,
 ) -> firestore.Client:
     """
-    
     Initialize the Firestore client.
 
     Uses the service-account JSON at `credentials_path` when that file is

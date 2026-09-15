@@ -52,6 +52,7 @@ MODEL = "model"
 # Column names as script 02 writes them. The raw Berlin export calls these
 # `user` / `ai`; script 02 normalises every experiment to author_1 / author_2,
 # and this module reads its output, not the export.
+HUMAN_COL = "author_1"
 MODEL_COL = "author_2"
 
 INTERACTION_FILE = "interaction_level_stories_filtered_berlin.csv"
