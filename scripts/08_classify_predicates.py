@@ -36,6 +36,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from nes.berlin_pov import ANALYSIS_LANGUAGE  # noqa: E402
 from nes.io import get_data_path, get_project_root  # noqa: E402
 
 MODEL = "gpt-4.1-mini"
@@ -95,7 +96,7 @@ def label_batch(client, items: list[dict]) -> dict[str, str]:
     return out
 
 
-def main(language: str = "de", limit: int | None = None) -> None:
+def main(language: str = ANALYSIS_LANGUAGE, limit: int | None = None) -> None:
     import dotenv
     import openai
 
@@ -163,6 +164,6 @@ def main(language: str = "de", limit: int | None = None) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--language", default="de", choices=["de", "en"])
+    ap.add_argument("--language", default=ANALYSIS_LANGUAGE, choices=["de", "en"])
     ap.add_argument("--limit", type=int, default=None)
     main(**vars(ap.parse_args()))

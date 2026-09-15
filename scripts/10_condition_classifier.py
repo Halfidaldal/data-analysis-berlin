@@ -40,12 +40,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from nes.io import get_data_path  # noqa: E402
+from nes.berlin_pov import ANALYSIS_LANGUAGE  # noqa: E402
+from nes.io import get_data_path, get_shared_config  # noqa: E402
 
 LABELS = {"1": "W1 reconstructed person", "2": "W2 future language model", "3": "W3 obsolete object"}
 N_SPLITS = 5
 N_PERMUTATIONS = 1000
-SEED = 42
+SEED = get_shared_config()["analysis"]["random_seed"]
 
 
 def load_embeddings(language: str) -> pd.DataFrame:
@@ -184,7 +185,7 @@ def report(name: str, res: dict, chance: float, p: float | None = None) -> None:
     print(cm.to_string().replace("\n", "\n  ").rjust(2))
 
 
-def main(language: str = "de", permutations: bool = True) -> None:
+def main(language: str = ANALYSIS_LANGUAGE, permutations: bool = True) -> None:
     d = load_embeddings(language)
     y = d["condition"].to_numpy()
     chance = float(pd.Series(y).value_counts(normalize=True).max())
@@ -259,7 +260,7 @@ def main(language: str = "de", permutations: bool = True) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--language", default="de", choices=["de", "en"])
+    ap.add_argument("--language", default=ANALYSIS_LANGUAGE, choices=["de", "en"])
     ap.add_argument("--no-permutations", dest="permutations", action="store_false",
                     help="skip the permutation test (it is the slow part)")
     main(**vars(ap.parse_args()))

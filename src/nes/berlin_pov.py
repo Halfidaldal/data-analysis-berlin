@@ -43,7 +43,11 @@ CONDITION_LABELS = {
     "2": "W2 future language model",
     "3": "W3 obsolete object",
 }
-ANALYSIS_LANGUAGE = "de"
+# The primary analysis language, from config (shared.analysis.language). Every
+# script defaults its --language flag to this, so the corpus is defined in one
+# place rather than by a constant buried in a module; --language overrides it for
+# a single run (the English validation set).
+ANALYSIS_LANGUAGE = load_config()["shared"]["analysis"]["language"]
 MIN_TURN_PAIRS = 3
 
 HUMAN = "human"

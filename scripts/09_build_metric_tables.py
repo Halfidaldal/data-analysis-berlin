@@ -63,6 +63,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from nes.berlin_pov import (  # noqa: E402
+    ANALYSIS_LANGUAGE,
     HUMAN_COL,
     MODEL_COL,
     language_suffix,
@@ -615,7 +616,7 @@ def build_clauses(language: str) -> pd.DataFrame | None:
     return cl
 
 
-def main(language: str = "de") -> None:
+def main(language: str = ANALYSIS_LANGUAGE) -> None:
     print(f"building metric tables, language={language}")
     ex = build_exchanges(language)
     ex = attach_valence(ex, language)
@@ -668,5 +669,5 @@ def main(language: str = "de") -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--language", default="de", choices=["de", "en"])
+    ap.add_argument("--language", default=ANALYSIS_LANGUAGE, choices=["de", "en"])
     main(**vars(ap.parse_args()))

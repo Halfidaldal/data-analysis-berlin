@@ -28,6 +28,7 @@ import spacy
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from nes.berlin_pov import (  # noqa: E402
+    ANALYSIS_LANGUAGE,
     HUMAN,
     MODEL,
     author_labelled_stream,
@@ -318,7 +319,7 @@ def extract_clauses(doc, offsets, meta: dict, vocab: set[str], lang: dict) -> li
     return rows
 
 
-def main(limit: int | None = None, language: str = "de") -> None:
+def main(limit: int | None = None, language: str = ANALYSIS_LANGUAGE) -> None:
     lang = LANG[language]
     frames = build_frames(verbose=True, language=language)
     stream = author_labelled_stream(frames.turns)
@@ -385,7 +386,7 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=None, help="parse only the first N stories")
     ap.add_argument(
         "--language",
-        default="de",
+        default=ANALYSIS_LANGUAGE,
         choices=sorted(LANG),
         help="'de' is the primary analysis set; 'en' is the robustness subset",
     )

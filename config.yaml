@@ -168,5 +168,13 @@ shared:
     spacy_mdl_en: "en_core_web_trf"
 
   analysis:
+    # Seed for the condition classifier's cross-validation and permutation test
+    # (script 10).
     random_seed: 42
+
+    # The primary analysis language, and therefore which stories the pipeline
+    # runs on: "de" is the 173-story main set, "en" the 52-story validation set.
+    # Every script from 03 onward defaults its --language flag to this, so
+    # changing it here moves the whole pipeline; --language overrides it for a
+    # single run without editing config.
     language: "de"
