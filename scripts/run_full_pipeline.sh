@@ -22,7 +22,7 @@ run() { echo; echo "=== $* ==="; "$PY" "$@"; }
 
 if [ "$STAGE" != "tables" ]; then
   # --- text -> features -----------------------------------------------------
-  run scripts/02_clean_dataset.py            # -> interim
+  run scripts/02_clean_dataset.py            # -> interim (spell correction needs GEMINI_API_KEY)
   run scripts/03_compute_embeddings.py       # GPU: 14B encoder
   run scripts/04_compute_sentiment.py        # concept-vector projection valence
   run scripts/05_compute_textdescriptives.py # surface metrics

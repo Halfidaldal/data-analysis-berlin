@@ -42,6 +42,7 @@ from nes.sentiment import (
     compute_semantic_projection_batch,
     compute_dyadic_windowed_projection,
 )
+from nes.berlin_pov import ANALYSIS_LANGUAGE, language_suffix
 from nes.io import (
     backfill_interaction_metadata,
     get_active_experiment,
@@ -53,7 +54,7 @@ from nes.io import (
 )
 
 
-def main():
+def main(language: str = ANALYSIS_LANGUAGE):
     experiment = get_active_experiment()
     exp_config = get_experiment_config()
     shared_config = get_shared_config()
@@ -63,9 +64,9 @@ def main():
     print(f"Active experiment: {experiment}")
 
     print("Loading story data with embeddings...")
+    lang_sfx = language_suffix(language)
     df_interaction_level = load_parquet(
-        "story_embeddings_interaction_level_simulated.parquet" if simulated
-        else "story_embeddings_interaction_level.parquet",
+        f"story_embeddings_interaction_level{'_simulated' if simulated else lang_sfx}.parquet",
         stage="processed",
     )
     df_interaction_level = backfill_interaction_metadata(
@@ -135,10 +136,7 @@ def main():
         separator=separator,
     )
 
-    output_file = (
-        "dyadic_sentiment_scores_simulated.parquet" if simulated
-        else "dyadic_sentiment_scores.parquet"
-    )
+    output_file = f"dyadic_sentiment_scores{'_simulated' if simulated else lang_sfx}.parquet"
     save_parquet(df_dyadic, output_file, stage="processed")
     print(f"\n✓ Saved sentiment for {len(df_dyadic)} turns to {output_file}")
 
@@ -146,4 +144,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+
+    _ap = argparse.ArgumentParser(description="Concept-vector-projection valence for the analysis set.")
+    _ap.add_argument("--language", default=ANALYSIS_LANGUAGE, choices=["de", "en"])
+    main(language=_ap.parse_args().language)

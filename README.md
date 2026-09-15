@@ -8,6 +8,10 @@ five turn-pairs.
 > **Status: pre-paper.** The analysis is in progress and nothing here is a settled
 > result.
 
+**Corpus:** 310 conversations collected 31 Oct – 2 Nov 2025. After quality control,
+**173 German** stories form the analysis set and **52 English** stories are held as
+a validation set.
+
 ## The design
 
 Every visitor was assigned one of three **perspective conditions** (`workshop_id`),
@@ -55,18 +59,35 @@ Metric computation only. **No models are fitted in Python** — the analysis is 
 in R against `data/berlin/processed/metrics_*.parquet`.
 
 ```
-01  download_stories        raw Firestore export      (needs credentials)
-02  clean_dataset           -> interim/               (needs the raw export)
+01  download_stories        Firestore -> raw/      (festival window only)
+02  clean_dataset           -> interim/            (QC + spelling; keeps everything)
 
-03  compute_embeddings      vectors, incl. per-story over the analysis set
-04  compute_sentiment       concept-vector projection valence   (04b rebuilds the vector)
+--- from here on, the analysis set only ---
+03  compute_embeddings      vectors, per turn and per story
+04  compute_sentiment       concept-vector projection valence  (04b rebuilds the vector)
 05  compute_textdescriptives surface metrics
 06  parse_clauses           1sg clauses: transitivity, author attribution
 07  temporal_cues           past/future cues, morphological tense, prompt echo
-08  classify_predicates     LLM experience/agency annotation    (optional, API)
-
+08  classify_predicates     LLM experience/agency annotation   (optional, API)
 09  build_metric_tables     -> metrics_*.parquet
 10  condition_classifier    manipulation check: did W1/W2/W3 land?
+```
+
+**The n is the same at every stage from 03 onward: 173.** Scripts 01 and 02 keep
+more than that on purpose — both languages, and the sessions people abandoned
+after a turn or two — because the abandonment analysis needs them and because the
+English subset should not require a second download. The narrowing happens once,
+at script 03, using `nes.berlin_pov.analysis_set_ids`, which is the same
+selection every later stage applies.
+
+German is the default and is unsuffixed. The English validation set is a
+`--language en` run of the same scripts, writing `*_en` outputs alongside:
+
+```bash
+for s in 03_compute_embeddings 04_compute_sentiment 05_compute_textdescriptives \
+         06_parse_clauses 07_temporal_cues 09_build_metric_tables 10_condition_classifier; do
+  PYTHONPATH=src .venv/bin/python scripts/$s.py --language en
+done
 ```
 
 ```bash

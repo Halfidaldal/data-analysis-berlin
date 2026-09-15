@@ -4,15 +4,17 @@ Script 03: Compute embeddings.
 
 Three outputs, all with the encoder named in config.yaml (shared.embeddings):
 
-  story_embeddings_full.parquet             per story: whole text and each side
+  story_embeddings_full.parquet              per story: whole text and each side
   story_embeddings_interaction_level.parquet per turn-pair: each side separately
-  analysis_story_embeddings.parquet          per story, ANALYSIS SET ONLY
 
-The third is the one downstream code should use for anything keyed to condition.
-The first two are computed over the whole interim table, which still contains
-non-German stories, instrument tests, and stories the analysis set excludes; the
-third applies the selection in src/nes/berlin_pov.py first and carries
-conversation_id and condition on every row, so vectors cannot be misaligned to
+Both are restricted to the analysis set for `--language` (German by default, the
+52-story English subset with --language en), so every stage of the pipeline
+carries the same n. Script 02 deliberately keeps more than this -- both languages
+and the abandoned sessions -- because the abandonment analysis needs them; the
+narrowing happens here and is the same `nes.berlin_pov` selection every later
+stage uses.
+
+Each row carries conversation_id and workshop_id, so vectors are never matched to
 conditions by position.
 
 Turns are encoded plain, with no instruction or query prefix. The configured
@@ -33,48 +35,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from nes.embeddings import compute_story_embeddings_full_stories, embed_story_columns
 from nes.cleaning import normalize_columns
-from nes.berlin_pov import author_labelled_stream, build_frames
+from nes.berlin_pov import ANALYSIS_LANGUAGE, analysis_set_ids, author_labelled_stream, build_frames, language_suffix
 from nes.io import get_file_suffix, load_csv, save_parquet, save_npy, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
 
 
-def embed_analysis_set(embeddings_config, experiment, language="de"):
-    """Per-story embeddings over the analysis set, keyed by conversation_id."""
-    from nes.embeddings import compute_embeddings_batch
 
-    frames = build_frames(language=language)
-    stream = author_labelled_stream(frames.turns)
-
-    def joined(df):
-        return (
-            df.groupby(["conversation_id", "condition"], sort=False)["text"]
-            .apply(" ".join)
-            .reset_index()
-        )
-
-    story = joined(stream).rename(columns={"text": "full_story"})
-    for side, who in (("full_user", "human"), ("full_model", "model")):
-        part = joined(stream[stream["author"] == who]).rename(columns={"text": side})
-        story = story.merge(
-            part[["conversation_id", side]], on="conversation_id", how="left"
-        )
-        story[side] = story[side].fillna("")
-
-    for col in ("full_story", "full_user", "full_model"):
-        print(f"  encoding {col} ({len(story)} stories) ...")
-        vecs = compute_embeddings_batch(
-            story[col].tolist(),
-            model_name=embeddings_config["model_name"],
-            batch_size=embeddings_config["batch_size"],
-            active_dataset=experiment,
-        )
-        story[f"{col}_embedding"] = list(vecs)
-
-    suffix = "" if language == "de" else f"_{language}"
-    save_parquet(story, f"analysis_story_embeddings{suffix}.parquet", stage="processed")
-    print(f"  -> analysis_story_embeddings{suffix}.parquet ({len(story)} stories)")
-
-
-def main():
+def main(language: str = ANALYSIS_LANGUAGE):
     # Load config
     experiment = get_active_experiment()
     exp_config = get_experiment_config()
@@ -92,6 +58,17 @@ def main():
     df_full = normalize_columns(df_full, experiment)
     df_interactions = normalize_columns(df_interactions, experiment)
     print(f"Loaded {len(df_full)} full stories and {len(df_interactions)} interaction-level stories")
+
+    # Restrict to the analysis set so every stage of the pipeline carries the
+    # same n. Script 02 keeps both languages and the abandoned sessions, because
+    # the abandonment analysis needs them; from here on the corpus is the
+    # analysis set for `language`.
+    keep = analysis_set_ids(language)
+    df_full = df_full[df_full["conversation_id"].isin(keep)].reset_index(drop=True)
+    df_interactions = df_interactions[df_interactions["conversation_id"].isin(keep)].reset_index(drop=True)
+    lang_sfx = language_suffix(language)
+    print(f"Analysis set (language={language}): {len(df_full)} stories, "
+          f"{len(df_interactions)} interaction rows")
     
     # Compute embeddings using standardized column names (author_1, author_2)
     print(f"\nComputing embeddings using {embeddings_config['model_name']}...")
@@ -112,20 +89,14 @@ def main():
     
     # Save parquet with embeddings as list columns
     print("\nSaving embeddings...")
-    save_parquet(df_embedded, "story_embeddings_full_simulated.parquet" if simulated else "story_embeddings_full.parquet", stage="processed")
-    save_parquet(df_embedded_interaction, "story_embeddings_interaction_level_simulated.parquet" if simulated else "story_embeddings_interaction_level.parquet", stage="processed") 
+    save_parquet(df_embedded, f"story_embeddings_full{'_simulated' if simulated else lang_sfx}.parquet", stage="processed")
+    save_parquet(df_embedded_interaction, f"story_embeddings_interaction_level{'_simulated' if simulated else lang_sfx}.parquet", stage="processed") 
     
     # Save individual .npy files for numpy arrays
-    save_npy(story_emb, "story_embeddings_full_simulated.npy" if simulated else "story_embeddings_full.npy",  stage="processed")
-    save_npy(author_1_emb, "story_author_1_embeddings_full_simulated.npy" if simulated else "story_author_1_embeddings_full.npy", stage="processed")
-    save_npy(author_2_emb, "story_author_2_embeddings_full_simulated.npy" if simulated else "story_author_2_embeddings_full.npy", stage="processed")
+    save_npy(story_emb, f"story_embeddings_full{'_simulated' if simulated else lang_sfx}.npy",  stage="processed")
+    save_npy(author_1_emb, f"story_author_1_embeddings_full{'_simulated' if simulated else lang_sfx}.npy", stage="processed")
+    save_npy(author_2_emb, f"story_author_2_embeddings_full{'_simulated' if simulated else lang_sfx}.npy", stage="processed")
         
-    # ---- analysis-set per-story embeddings ------------------------------
-    # Built from the author-labelled stream so the visitor and model sides are
-    # exactly the text the driver analyses parse, and so every vector carries
-    # its conversation_id. scripts/10_condition_classifier.py reads this.
-    embed_analysis_set(embeddings_config, experiment)
-
     print(f"\n✓ Computed embeddings for {len(df_embedded)} stories")
     print(f"✓ Embedding dimension: {story_emb.shape[1]}")
     print(f"✓ Saved to {exp_config['processed_dir']}/")
@@ -133,4 +104,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    _ap = argparse.ArgumentParser(description="Compute embeddings for the analysis set.")
+    _ap.add_argument("--language", default=ANALYSIS_LANGUAGE, choices=["de", "en"],
+                     help="'de' is the primary analysis set; 'en' is the validation subset")
+    _args = _ap.parse_args()
+    main(language=_args.language)

@@ -13,30 +13,60 @@ from typing import Optional, List, Dict, Any
 from uuid import uuid4
 import re
 import pandas as pd
+from pathlib import Path
 import numpy as np
 import firebase_admin
 from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1 import FieldFilter
 
 
-def init_firestore(credentials_path: str) -> firestore.Client:
+def init_firestore(
+    credentials_path: Optional[str] = None,
+    project_id: Optional[str] = None,
+) -> firestore.Client:
     """
-    Initialize Firestore client.
     
+    Initialize the Firestore client.
+
+    Uses the service-account JSON at `credentials_path` when that file is
+    present. Otherwise falls back to Application Default Credentials, i.e.
+
+        gcloud auth application-default login
+
+    `project_id` must be given for the ADC path. ADC carries no project of its
+    own, so without it the client would target whatever `gcloud config get-value
+    project` happens to be set to -- which is a different project on this
+    machine, and would fail with a confusing "collection not found" rather than
+    an auth error.
+
     Args:
-        credentials_path: Path to Firebase admin SDK JSON file
-        
+        credentials_path: Path to a Firebase admin SDK JSON file, or None.
+        project_id: GCP/Firebase project id. Required when using ADC.
+
     Returns:
         Firestore client instance
     """
     try:
-        # Check if already initialized
         firebase_admin.get_app()
+        return firestore.client()
     except ValueError:
-        # Not initialized yet
-        cred = credentials.Certificate(credentials_path)
-        firebase_admin.initialize_app(cred)
-    
+        pass
+
+    if credentials_path and Path(credentials_path).is_file():
+        print(f"Firestore auth: service account ({Path(credentials_path).name})")
+        firebase_admin.initialize_app(credentials.Certificate(credentials_path))
+    else:
+        if not project_id:
+            raise ValueError(
+                "No service-account file found and no project_id configured. "
+                "Set experiments.<name>.firestore.project_id in config.yaml, and "
+                "authenticate with: gcloud auth application-default login"
+            )
+        print(f"Firestore auth: application default credentials (project {project_id})")
+        firebase_admin.initialize_app(
+            credentials.ApplicationDefault(), {"projectId": project_id}
+        )
+
     return firestore.client()
 
 
@@ -128,7 +158,8 @@ def download_stories_from_firestore(
     db: firestore.Client,
     collection_name: str = "story_data_TEXT",
     min_interactions: int = 9,
-    schema: str = "flat"
+    schema: str = "flat",
+    **berlin_kwargs,
 ) -> pd.DataFrame:
     """
     Download stories from Firestore, keeping only complete stories.
@@ -150,8 +181,117 @@ def download_stories_from_firestore(
         return _download_flat_schema(db, collection_name, min_interactions)
     elif schema == "nested":
         return _download_nested_schema(db, collection_name, min_interactions)
+    elif schema == "berlin":
+        return _download_berlin_schema(db, collection_name, **berlin_kwargs)
     else:
-        raise ValueError(f"Unknown schema: {schema}. Must be 'flat' or 'nested'")
+        raise ValueError(
+            f"Unknown schema: {schema}. Must be 'flat', 'nested' or 'berlin'"
+        )
+
+
+def _download_berlin_schema(
+    db: firestore.Client,
+    collection_name: str,
+    collection_start: Optional[str] = None,
+    collection_end: Optional[str] = None,
+    timezone: str = "Europe/Berlin",
+) -> pd.DataFrame:
+    """
+    Download the Berlin collection. Every document, no completeness filter.
+
+    The Berlin instrument stores a different document shape from the English
+    conditions -- `workshop_id` (the perspective condition), `language` and
+    `client_id` instead of `respondent_id` / `interaction_count` / `llm_type` --
+    so it cannot share the flat-schema reader, which would silently drop the
+    condition variable.
+
+    It also takes no `min_interactions`. The flat reader keeps only whole
+    `min_interactions`-sized chunks (`n // min_interactions`), which is right for
+    the English corpus where a story is exactly ten turns and a long
+    conversation is several stories back to back. Berlin sessions run to at most
+    five turn-pairs and stop whenever the visitor walks away, so that rule would
+    discard every short session: at the collected distribution it removes 140 of
+    316 conversations, including all 60 single-turn ones that the abandonment
+    analysis is about, and truncates the sessions that ran long. Selection
+    happens later, in `nes.berlin_pov.build_frames`, where it is explicit and
+    auditable.
+
+    `collection_start` / `collection_end` bound the corpus by date rather than by
+    when the download happened to be run. The collection is a fixed event, but
+    the installation kept accepting input afterwards: a download taken later
+    picks up sessions from 10 Nov through 2 Dec that look entirely legitimate --
+    real workshop_id, real language, the museum's own devices -- and would
+    silently enter the analysis set. Dates are interpreted in `timezone` (the
+    museum's local time, not UTC) and both ends are inclusive.
+
+    The window is applied to each conversation's FIRST timestamp, so a session
+    running past midnight stays whole rather than being cut in half.
+
+    Rows are returned in composition order (conversation, then timestamp), which
+    is what every downstream `groupby(...).cumcount()` relies on.
+    """
+    docs = db.collection(collection_name).order_by("conversation_id").order_by("timestamp").stream()
+
+    rows = []
+    for doc in docs:
+        d = doc.to_dict() or {}
+        rows.append(
+            {
+                "timestamp": d.get("timestamp"),
+                "user": d.get("user"),
+                "ai": d.get("ai"),
+                "combined_prompt": d.get("combined_prompt"),
+                "client_id": d.get("client_id"),
+                "workshop_id": d.get("workshop_id"),
+                "language": d.get("language"),
+                "conversation_id": doc.get("conversation_id"),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        print(f"No documents found in collection {collection_name}")
+        return df
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+
+    # Rows with no conversation_id cannot be grouped into a story and are
+    # dropped by every downstream groupby anyway; drop them here so the count is
+    # reported rather than silently absorbed.
+    no_id = df["conversation_id"].isna().sum()
+    if no_id:
+        print(f"  dropping {no_id} row(s) with no conversation_id")
+        df = df[df["conversation_id"].notna()].copy()
+
+    df = df.sort_values(["conversation_id", "timestamp"], kind="stable").reset_index(drop=True)
+
+    if collection_start or collection_end:
+        local_start = df.groupby("conversation_id")["timestamp"].transform("min")
+        local_start = local_start.dt.tz_convert(timezone)
+        keep = pd.Series(True, index=df.index)
+        if collection_start:
+            keep &= local_start.dt.date >= pd.Timestamp(collection_start).date()
+        if collection_end:
+            keep &= local_start.dt.date <= pd.Timestamp(collection_end).date()
+        dropped = df.loc[~keep, "conversation_id"].nunique()
+        if dropped:
+            outside = (
+                df.loc[~keep].groupby("conversation_id")["timestamp"].min().dt.tz_convert(timezone)
+            )
+            print(
+                f"  collection window {collection_start}..{collection_end} ({timezone}): "
+                f"dropping {dropped} conversation(s) outside it "
+                f"[{outside.min():%Y-%m-%d} .. {outside.max():%Y-%m-%d}]"
+            )
+        df = df[keep].reset_index(drop=True)
+
+    n_conv = df["conversation_id"].nunique()
+    turns = df.groupby("conversation_id").size()
+    print(f"Downloaded {len(df)} interactions from {n_conv} conversations (berlin schema)")
+    print(f"  turn-pairs per conversation: {turns.min()}-{turns.max()}, median {int(turns.median())}")
+    print(f"  workshop_id: {df['workshop_id'].value_counts(dropna=False).to_dict()}")
+    print(f"  language:    {df['language'].value_counts(dropna=False).to_dict()}")
+    return df
 
 
 def _download_flat_schema(
@@ -348,6 +488,7 @@ def apply_spell_correction(
     df: pd.DataFrame,
     text_columns: List[str],
     api_key: str,
+    model: Optional[str] = None,
     preserve_raw_suffix: str = "_raw",
     edit_distance_suffix: str = "_edit_distance",
     edit_distance_threshold: Optional[int] = 70,
@@ -356,8 +497,8 @@ def apply_spell_correction(
     """
     Apply LLM spell-correction to selected text columns.
 
-    For each row in each target column the text is sent to GPT-4o-mini via
-    `nes.process_spelling_openai.correct_spelling`. The original text is
+    For each row in each target column the text is sent to the model named by
+    `model` via `nes.spelling.correct_spelling`. The original text is
     preserved in a `<column><preserve_raw_suffix>` column, the Levenshtein
     distance between original and corrected text is stored in
     `<column><edit_distance_suffix>`, and the column itself is replaced with
@@ -376,7 +517,8 @@ def apply_spell_correction(
         df: Input DataFrame.
         text_columns: Columns to spell-correct (e.g., ['author_1'] for HA,
             ['author_1', 'author_2'] for HH).
-        api_key: OpenAI API key.
+        api_key: API key for the correction model.
+        model: Correction model name (see config: shared.spelling.model_name).
         preserve_raw_suffix: Suffix for the preserved original text column.
         edit_distance_suffix: Suffix for the per-row edit distance column.
         edit_distance_threshold: Optional Levenshtein cutoff for the audit flag.
@@ -386,7 +528,7 @@ def apply_spell_correction(
     Returns:
         DataFrame with corrected text + audit columns.
     """
-    from nes.process_spelling_openai import correct_spelling, compute_edit_distance_values
+    from nes.spelling import correct_spelling, compute_edit_distance_values
 
     if not text_columns:
         return df.copy()
@@ -395,6 +537,10 @@ def apply_spell_correction(
         raise ValueError(f"Missing text columns for spell correction: {missing}")
     if not api_key:
         raise ValueError("api_key is required for spell correction")
+    if model is None:
+        from nes.spelling import DEFAULT_MODEL
+
+        model = DEFAULT_MODEL
 
     df = df.copy()
     excessive = pd.Series(False, index=df.index)
@@ -419,7 +565,7 @@ def apply_spell_correction(
                 corrected.append(value)
                 n_skipped += 1
                 continue
-            corrected.append(correct_spelling(value, api_key=api_key))
+            corrected.append(correct_spelling(value, api_key=api_key, model=model))
             n_calls += 1
         df[column] = corrected
 
@@ -1115,11 +1261,13 @@ def add_exchange_aligned_metadata(
         'human-ai': 'human',
         'human-human': 'human',
         'ai-ai': 'ai',
+        'berlin': 'human',
     }
     author_2_type_map = {
         'human-ai': 'ai',
         'human-human': 'human',
         'ai-ai': 'ai',
+        'berlin': 'ai',
     }
 
     unknown_conditions = sorted(set(df['condition'].dropna().unique()) - set(author_1_type_map))

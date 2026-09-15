@@ -17,3 +17,6 @@ firebase-debug.log
 # macOS
 .DS_Store
 .mplconfig/
+
+# Raw data -- unredacted participant text
+data/**/raw/

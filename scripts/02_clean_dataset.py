@@ -46,7 +46,7 @@ from nes.cleaning import (
     apply_spell_correction,
     drop_text_qc_flagged_rows,
 )
-from nes.io import load_csv, save_csv, get_project_root, load_config, get_active_experiment, get_experiment_config, get_shared_config
+from nes.io import load_csv, save_csv, get_active_experiment, get_experiment_config, get_shared_config, get_file_suffix
 
 import os
 
@@ -74,7 +74,7 @@ def main():
     parser.add_argument(
         "--skip-spell-correction",
         action="store_true",
-        help="Skip GPT-4o-mini spell correction on human-authored slots"
+        help="Skip LLM spell correction on human-authored slots"
     )
     parser.add_argument(
         "--drop-flagged-rows",
@@ -161,8 +161,12 @@ def main():
         else:
             print("\nNo respondent_id filtering (not applicable for this experiment)")
 
-        if not args.skip_text_qc and experiment in ['human-ai', 'human-human']:
+        if not args.skip_text_qc and experiment in ['human-ai', 'human-human', 'berlin']:
             print("\nApplying deterministic text-quality QC...")
+            # Only human-authored slots are screened. author_2 is the model in
+            # human-ai and berlin, and model output does not need quality
+            # control -- flagging it would remove stories for the model's
+            # behaviour rather than the participant's.
             text_qc_slots = ['author_1']
             if experiment == 'human-human':
                 text_qc_slots.append('author_2')
@@ -220,24 +224,26 @@ def main():
         else:
             print("\nSkipping deterministic text-quality QC")
 
-        if not args.skip_spell_correction and experiment in ['human-ai', 'human-human']:
+        if not args.skip_spell_correction and experiment in ['human-ai', 'human-human', 'berlin']:
             spell_slots = ['author_1']
             if experiment == 'human-human':
                 spell_slots.append('author_2')
 
-            api_key = os.environ.get('OPENAI_API_KEY')
+            api_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')
+            spell_model = shared_config.get('spelling', {}).get('model_name')
             if not api_key:
                 print(
-                    "\nSkipping spell correction: OPENAI_API_KEY environment variable is not set"
+                    "\nSkipping spell correction: set GEMINI_API_KEY (or GOOGLE_API_KEY) to enable it"
                 )
             else:
                 print(
-                    f"\nApplying GPT-4o-mini spell correction to: {', '.join(spell_slots)}"
+                    f"\nApplying {spell_model} spell correction to: {', '.join(spell_slots)}"
                 )
                 df_filtered = apply_spell_correction(
                     df_filtered,
                     text_columns=spell_slots,
                     api_key=api_key,
+                    model=spell_model,
                     edit_distance_threshold=args.spell_correction_edit_threshold,
                 )
 
@@ -251,24 +257,39 @@ def main():
             random_seed = shared_config['analysis']['random_seed']
             df_filtered = randomize_author_assignment(df_filtered, group_col='conversation_id', seed=random_seed)
 
-    print("\nRemoving incomplete conversation fragments...")
-    df_filtered = keep_complete_conversations(df_filtered, group_col='conversation_id')
+    # Only for the fixed-length corpora. keep_complete_conversations infers the
+    # modal story length and drops every conversation that is not exactly that
+    # long, which is right when a story is by construction 10 or 11 turns and a
+    # short one is a filtering artefact. Berlin sessions end whenever the visitor
+    # stops, so length genuinely varies from 1 to 10 and the modal rule would
+    # discard 125 of 316 conversations -- including every abandoned one the
+    # engagement frame exists to measure.
+    if experiment != 'berlin':
+        print("\nRemoving incomplete conversation fragments...")
+        df_filtered = keep_complete_conversations(df_filtered, group_col='conversation_id')
+    else:
+        sizes = df_filtered.groupby('conversation_id').size()
+        print(f"\nKeeping all {len(sizes)} conversations (length varies "
+              f"{sizes.min()}-{sizes.max()}); selection happens in nes.berlin_pov")
 
     print("\nAdding exchange-aligned analysis metadata...")
     df_filtered = add_exchange_aligned_metadata(df_filtered, experiment=experiment)
 
     print("\nBuilding full story text...")
-    # Save filtered interaction-level data
-    output_interaction = "interaction_level_stories_filtered_simulated.csv" if simulated else "interaction_level_stories_filtered.csv"
+    # Interim files carry the experiment suffix (config: file_suffix). Writing
+    # them unsuffixed leaves the suffixed files downstream actually reads
+    # untouched, so the rest of the pipeline would silently run on stale data.
+    suffix = get_file_suffix()
+    output_interaction = f"interaction_level_stories_filtered{'_simulated' if simulated else suffix}.csv"
     save_csv(df_filtered, output_interaction, stage="interim")
 
     print("\nBuilding long-format analysis export...")
     df_long = build_long_format_analysis(df_filtered)
-    output_long = "interaction_level_stories_long_filtered_simulated.csv" if simulated else "interaction_level_stories_long_filtered.csv"
+    output_long = f"interaction_level_stories_long_filtered{'_simulated' if simulated else suffix}.csv"
     save_csv(df_long, output_long, stage="interim")
     
     df_stories = build_full_story_text(df_filtered, experiment=experiment)
-    output_stories = "stories_full_text_filtered_simulated.csv" if simulated else "stories_full_text_filtered.csv"
+    output_stories = f"stories_full_text_filtered{'_simulated' if simulated else suffix}.csv"
     save_csv(df_stories, output_stories, stage="interim")
     
     print(f"\n✓ Filtered to {len(df_filtered)} interaction rows")

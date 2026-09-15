@@ -20,15 +20,48 @@ experiments:
     # append it rather than looking for the unsuffixed EMNLP filenames.
     file_suffix: "_berlin"
 
-    # Firestore settings
+    # Firestore settings.
+    #
+    # Auth: a service-account JSON at shared.firestore.credentials_path if that
+    # file exists, otherwise Application Default Credentials
+    # (gcloud auth application-default login). project_id is required for the
+    # ADC path -- ADC carries no project, so without it the client would use
+    # whatever `gcloud config get-value project` returns.
+    #
+    # schema "berlin" reads the Berlin document shape (workshop_id, language,
+    # client_id) and applies no completeness filter. The "flat" reader used by
+    # the English conditions keeps only whole min_interactions-sized chunks,
+    # which here would drop 140 of 316 conversations and lose workshop_id
+    # entirely. Selection is done later and explicitly in nes.berlin_pov.
     firestore:
       collection_name: "story_data_berlin"
       stories_collection: "story_data_berlin"
-      min_interactions: 5
-      schema: "flat"
+      project_id: "the-never-ending-story-a7b5f"
+      schema: "berlin"
 
-    # Cleaning parameters
+      # The collection is a fixed event: Festival of Future Nows, Neue
+      # Nationalgalerie, 31 Oct - 2 Nov 2025. The installation kept accepting
+      # input afterwards, so a later download picks up sessions from 10 Nov to
+      # 2 Dec that look legitimate (real workshop_id and language, the museum's
+      # own devices) and would otherwise join the corpus. Dates are Berlin local
+      # time, both ends inclusive, applied to each conversation's first turn so
+      # a session running past midnight is not split.
+      collection_start: "2025-10-31"
+      collection_end: "2025-11-02"
+      timezone: "Europe/Berlin"
+
     cleaning:
+      # The instrument was designed to stop at five turn-pairs and mostly did.
+      # 13 sessions ran to 6-10, and 12 of those are from 31 October, the first
+      # full collection day (96 conversations, 12 over-length); across 1-2
+      # November, 215 conversations produced one. The limit was evidently not
+      # enforced on day one and was fixed afterwards -- an instrument change
+      # mid-collection, not participant behaviour. The sessions themselves are
+      # genuine (normal hours, both devices, both languages, all three
+      # conditions, continuous sittings), so they are truncated rather than
+      # dropped: every story is then comparable under the same five-turn
+      # instrument, and only the part the instrument should not have allowed is
+      # discarded.
       max_turns: 5
 
     # Author columns in raw data (before normalization to author_1 / author_2)
@@ -47,6 +80,8 @@ experiments:
 # ---------------------------------------------------------------------------
 shared:
   firestore:
+    # Optional. Not committed (environment/ is gitignored); when the file is
+    # absent the pipeline uses Application Default Credentials instead.
     credentials_path: "environment/the-never-ending-story-a7b5f-0f4f8dbe4084.json"
 
   cleaning:
@@ -106,6 +141,17 @@ shared:
     projection_build_batch_size: 8
     projection_task: null
     projection_context_separator: "\n"
+
+  # Spelling correction of the human side (script 02).
+  #
+  # Visitors typed on a touchscreen, often without capitals, and the German
+  # dependency parser downstream is trained on conventionally capitalised
+  # German. The correction is constrained to orthography; script 02 keeps the
+  # original in author_1_raw and the Levenshtein distance in
+  # author_1_edit_distance, so rewrites can be found rather than trusted.
+  # Needs GEMINI_API_KEY (or GOOGLE_API_KEY) in the environment.
+  spelling:
+    model_name: "gemini-3.5-flash-lite"
 
   # Surface metrics (textdescriptives). German model: the corpus is German and
   # an English pipeline would mis-tag every sentence.

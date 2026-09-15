@@ -63,13 +63,15 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from nes.berlin_pov import (  # noqa: E402
+    HUMAN_COL,
+    MODEL_COL,
+    language_suffix,
     author_labelled_stream,
     build_frames,
     load_temporal_cues,
 )
 from nes.io import get_data_path  # noqa: E402
 
-HUMAN_COL, MODEL_COL = "user", "ai"
 
 
 def proc(language: str) -> Path:
@@ -77,7 +79,7 @@ def proc(language: str) -> Path:
 
 
 def sfx(language: str) -> str:
-    return "" if language == "de" else f"_{language}"
+    return language_suffix(language)
 
 
 # ---------------------------------------------------------------------------
@@ -137,17 +139,19 @@ def attach_valence(ex: pd.DataFrame, language: str) -> pd.DataFrame:
     Merge per-turn concept-vector-projection valence onto the exchange frame.
 
     THE JOIN IS NOT POSITIONAL, AND MUST NOT BE.
-    The sentiment table is not guaranteed row-aligned to the interim data: the
-    version shipped with this repo covered 205 of 316 conversations, carried
-    spelling-corrected human text, and for 12 of the 173 analysis-set stories was
-    missing *interior* turns rather than merely trailing ones. A `cumcount()`
-    join shifts valence by one turn in those stories, which silently corrupts
-    every lagged pair in `metrics_alignment_pairs`.
+    After a clean run of scripts 02 and 04 the two tables are row-aligned and
+    this join is trivially one-to-one. It is written defensively because the
+    version shipped before the pipeline was repaired was not: it covered 205 of
+    316 conversations, carried spelling-corrected human text, and for 12 of the
+    173 analysis-set stories was missing *interior* turns rather than merely
+    trailing ones. A `cumcount()` join shifts valence by one turn in exactly
+    those stories and silently corrupts every lagged pair in
+    `metrics_alignment_pairs`, with no error anywhere.
 
-    The model side is not spelling-corrected, so it keys the two tables together
+    The model side is never spell-corrected, so it keys the two tables together
     exactly. Anything that cannot be placed is left NaN rather than guessed.
     """
-    path = proc(language) / "dyadic_sentiment_scores.parquet"
+    path = proc(language) / f"dyadic_sentiment_scores{sfx(language)}.parquet"
     if not path.exists():
         print(f"  ! {path.name} not found -- valence will be NaN")
         ex["v_human"] = np.nan
@@ -155,7 +159,8 @@ def attach_valence(ex: pd.DataFrame, language: str) -> pd.DataFrame:
         return ex
 
     s = pd.read_parquet(path)
-    hcol, mcol = "user_sentiment_projection", "ai_sentiment_projection"
+    hcol = f"{HUMAN_COL}_sentiment_projection"
+    mcol = f"{MODEL_COL}_sentiment_projection"
     missing = [c for c in (hcol, mcol) if c not in s.columns]
     if missing:
         raise KeyError(
@@ -208,7 +213,7 @@ def attach_semantic_distance(ex: pd.DataFrame, language: str) -> pd.DataFrame:
     do inflate distance in absolute terms, but that inflation is constant across
     conditions and is absorbed by the intercept of any condition model.
     """
-    path = proc(language) / "story_embeddings_interaction_level.parquet"
+    path = proc(language) / f"story_embeddings_interaction_level{sfx(language)}.parquet"
     if not path.exists():
         print(f"  ! {path.name} not found -- semantic_distance will be NaN")
         ex["semantic_distance"] = np.nan
@@ -378,7 +383,7 @@ def build_semantic_pairs(language: str) -> pd.DataFrame | None:
     interaction but sits directly in the pooled direction effect. Model the
     interaction; do not report the pooled gap.
     """
-    path = proc(language) / "story_embeddings_interaction_level.parquet"
+    path = proc(language) / f"story_embeddings_interaction_level{sfx(language)}.parquet"
     if not path.exists():
         print(f"  ! {path.name} not found -- semantic pairs skipped")
         return None
@@ -581,7 +586,7 @@ def build_stories(ex: pd.DataFrame, seg: pd.DataFrame, language: str) -> pd.Data
         )
 
     # Surface metrics from script 05, if it has run.
-    sm_path = proc(language) / "full_story_surface_metrics.parquet"
+    sm_path = proc(language) / f"full_story_surface_metrics{sfx(language)}.parquet"
     if sm_path.exists():
         sm = pd.read_parquet(sm_path)
         if "conversation_id" in sm.columns:

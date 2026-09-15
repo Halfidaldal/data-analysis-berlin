@@ -49,6 +49,11 @@ MIN_TURN_PAIRS = 3
 HUMAN = "human"
 MODEL = "model"
 
+# Column names as script 02 writes them. The raw Berlin export calls these
+# `user` / `ai`; script 02 normalises every experiment to author_1 / author_2,
+# and this module reads its output, not the export.
+MODEL_COL = "author_2"
+
 INTERACTION_FILE = "interaction_level_stories_filtered_berlin.csv"
 STORY_FILE = "stories_full_text_filtered_berlin.csv"
 
@@ -134,7 +139,7 @@ CODE_SWITCH_THRESHOLD = 0.34
 MIN_HUMAN_SIGNAL = 0.25
 
 
-def human_signal_fraction(turns: pd.DataFrame, text_col: str = "user") -> float:
+def human_signal_fraction(turns: pd.DataFrame, text_col: str = HUMAN_COL) -> float:
     """Fraction of a story's non-empty human turns that can be assigned a language."""
     texts = [str(t) for t in turns[text_col] if str(t).strip()]
     if not texts:
@@ -230,7 +235,7 @@ def build_frames(verbose: bool = False, language: str = ANALYSIS_LANGUAGE) -> Be
         # judged for code-switching, and must not be silently kept by that check.
         if human_signal_fraction(grp) <= MIN_HUMAN_SIGNAL:
             excluded.append({"conversation_id": cid, "reason": "no_human_language_signal"})
-        elif code_switch_score(grp, "user", expected=language) > CODE_SWITCH_THRESHOLD:
+        elif code_switch_score(grp, HUMAN_COL, expected=language) > CODE_SWITCH_THRESHOLD:
             excluded.append({"conversation_id": cid, "reason": "code_switched"})
         else:
             keep.append(cid)
@@ -243,6 +248,12 @@ def build_frames(verbose: bool = False, language: str = ANALYSIS_LANGUAGE) -> Be
     # handles. Recorded here so the full criterion list stays visible in one place.
 
     text_turns = turns[turns["conversation_id"].isin(text["conversation_id"])].copy()
+    # Script 02 stamps `condition` with the experiment name ("berlin") for every
+    # row. In this study the condition is the perspective, carried in
+    # `workshop_id`, so the experiment-name column is dropped before the rename
+    # below -- otherwise the merge yields condition_x / condition_y and every
+    # downstream read of `condition` fails.
+    text_turns = text_turns.drop(columns=["condition"], errors="ignore")
     text_turns = text_turns.merge(
         text[["conversation_id", "workshop_id"]].rename(
             columns={"workshop_id": "condition"}
@@ -267,6 +278,27 @@ def build_frames(verbose: bool = False, language: str = ANALYSIS_LANGUAGE) -> Be
     return frames
 
 
+def language_suffix(language: str = ANALYSIS_LANGUAGE) -> str:
+    """
+    Output-file suffix for a language run.
+
+    German is the primary analysis set and is unsuffixed; every other language
+    carries its code, so an English validation run cannot overwrite the German
+    results.
+    """
+    return "" if language == ANALYSIS_LANGUAGE else f"_{language}"
+
+
+def analysis_set_ids(language: str = ANALYSIS_LANGUAGE) -> set:
+    """
+    conversation_ids of the analysis set -- the single definition of "the corpus".
+
+    Every stage from embeddings onward restricts to this, so the n is the same
+    at every level of the pipeline rather than narrowing partway through.
+    """
+    return set(build_frames(language=language).text["conversation_id"])
+
+
 def author_labelled_stream(turns: pd.DataFrame) -> pd.DataFrame:
     """
     Flatten a conversation's turns into an ordered sequence of author-labelled segments.
@@ -282,7 +314,7 @@ def author_labelled_stream(turns: pd.DataFrame) -> pd.DataFrame:
         grp = grp.sort_values("turn_index")
         seg = 0
         for _, r in grp.iterrows():
-            for author, col in ((HUMAN, "user"), (MODEL, "ai")):
+            for author, col in ((HUMAN, HUMAN_COL), (MODEL, MODEL_COL)):
                 text = str(r[col]) if pd.notna(r[col]) else ""
                 if not text.strip():
                     continue

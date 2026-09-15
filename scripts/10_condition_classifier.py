@@ -52,13 +52,22 @@ def load_embeddings(language: str) -> pd.DataFrame:
     suffix = "" if language == "de" else f"_{language}"
     path = (
         get_data_path("processed", experiment="berlin")
-        / f"analysis_story_embeddings{suffix}.parquet"
+        / f"story_embeddings_full{suffix}.parquet"
     )
     if not path.exists():
         raise FileNotFoundError(
             f"{path} not found. Run scripts/03_compute_embeddings.py first."
         )
     d = pd.read_parquet(path)
+    # The pipeline's slot names; this script talks about visitor and model.
+    d = d.rename(
+        columns={
+            "workshop_id": "condition",
+            "full_author_1": "full_user",
+            "full_author_1_embedding": "full_user_embedding",
+            "full_author_2_embedding": "full_model_embedding",
+        }
+    )
     d["condition"] = d["condition"].astype(str)
     return d
 
